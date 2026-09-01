@@ -24,6 +24,7 @@ export default function AssistantPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function AssistantPage() {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
     setInput("");
+    setError(null);
     setMessages((m) => [
       ...m,
       { id: `tmp-${Date.now()}`, role: "user", content: trimmed, created_at: new Date().toISOString() },
@@ -63,7 +65,11 @@ export default function AssistantPage() {
             created_at: new Date().toISOString(),
           },
         ]);
+      } else {
+        setError(data.error || "Có lỗi xảy ra, vui lòng thử lại.");
       }
+    } catch {
+      setError("Không kết nối được server, kiểm tra mạng và thử lại.");
     } finally {
       setLoading(false);
     }
@@ -96,6 +102,10 @@ export default function AssistantPage() {
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
+
+        {error && (
+          <div className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</div>
+        )}
 
         {loading && (
           <div className="flex items-center gap-2 text-sm text-[var(--color-muted)]">

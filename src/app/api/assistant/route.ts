@@ -4,6 +4,7 @@ import { getDb, newId, nowIso } from "@/lib/db";
 import { requireApiSession } from "@/lib/auth";
 import { askAssistantSmart } from "@/lib/aiAssistant";
 import { ChatTurn } from "@/lib/assistantShared";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,14 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await requireApiSession();
   if (!session) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+  const rate = checkRateLimit(session.userId, 1, 60_000); // tối đa 10 câu hỏi / 1 phút / người dùng
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: `Bạn hỏi hơi nhanh — vui lòng đợi ${Math.ceil(rate.retryAfterMs / 1000)} giây rồi thử lại.` },
+      { status: 429 }
+    );
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
