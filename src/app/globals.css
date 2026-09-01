@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #faf8f3;
+  --color-ink: #1f2a24;
+  --color-primary: #0f9d58;
+  --color-primary-dark: #0b7a44;
+  --color-primary-light: #e6f6ec;
+  --color-accent: #ff8f3c;
+  --color-accent-light: #fff1e4;
+  --color-danger: #e5484d;
+  --color-danger-light: #fde8e8;
+  --color-warn: #d69a1f;
+  --color-warn-light: #fdf4de;
+  --color-card: #ffffff;
+  --color-border: #e7e2d6;
+  --color-muted: #6b6558;
+}
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-ink: var(--color-ink);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--color-primary-light);
+}
+
+.app-shell {
+  max-width: 480px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  position: relative;
+}
+
+.scroll-area {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 5.5rem;
+}
+
+@media (min-width: 481px) {
+  .app-shell {
+    box-shadow: 0 0 0 1px var(--color-border);
+    min-height: 100vh;
+  }
+}
