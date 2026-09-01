@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PageHeader, Card, Button } from "@/components/ui";
-import { DEMO_DISCLAIMER, type AssistantResponse } from "@/lib/aiAssistant";
+import { DEMO_DISCLAIMER, type AssistantResponse } from "@/lib/assistantShared";
 
 interface ChatMessage {
   id: string;

@@ -1,13 +1,7 @@
 import { ProblemTag } from "@/data/supportOrgs";
-
-export interface AssistantResponse {
-  topic: string;
-  whatMightBeHappening: string;
-  whyItMatters: string;
-  whatYouCanDo: string[];
-  evidenceToKeep: string[];
-  helpTags: ProblemTag[];
-}
+import { GoogleGenAI, Type } from "@google/genai";
+import { AssistantResponse, ChatTurn } from "./assistantShared";
+import { AI_MODELS } from "./aiConfig";
 
 interface Scenario {
   id: string;
@@ -263,6 +257,53 @@ const fallback: AssistantResponse = {
   helpTags: ["general"],
 };
 
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+const PROBLEM_TAGS = [
+  "underpayment", "no_payslip", "unsafe", "visa_threat",
+  "harassment", "unfair_dismissal", "contract_hours", "general",
+] as const;
+
+const responseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    topic: { type: Type.STRING },
+    whatMightBeHappening: { type: Type.STRING },
+    whyItMatters: { type: Type.STRING },
+    whatYouCanDo: { type: Type.ARRAY, items: { type: Type.STRING } },
+    evidenceToKeep: { type: Type.ARRAY, items: { type: Type.STRING } },
+    helpTags: { type: Type.ARRAY, items: { type: Type.STRING, enum: PROBLEM_TAGS } },
+  },
+  required: ["topic", "whatMightBeHappening", "whyItMatters", "whatYouCanDo", "evidenceToKeep", "helpTags"],
+};
+
+const knowledgeBase = scenarios
+  .map((s) => `- ${s.response.topic}: ${s.response.whyItMatters}`)
+  .join("\n");
+
+const systemInstruction = `Bạn là trợ lý AI về quyền lợi lao động cho người lao động Việt Nam tại Úc, trong app "Bạn Đồng Hành".
+Chỉ trả lời bằng tiếng Việt. Đây KHÔNG phải tư vấn pháp lý chính thức — luôn nhắc người dùng kiểm tra lại với Fair Work Ombudsman khi cần.
+Dựa trên các kiến thức đã được kiểm chứng sau (không tự bịa số liệu luật khác):
+${knowledgeBase}
+Trả lời đúng theo JSON schema được cung cấp.`;
+
+/** Kiểm tra JSON Gemini trả về có đủ field cần thiết không, tránh crash nếu model trả thiếu. */
+function isValidResponse(x: unknown): x is AssistantResponse {
+  if (!x || typeof x !== "object") return false;
+  const r = x as Record<string, unknown>;
+  return (
+    typeof r.topic === "string" &&
+    typeof r.whatMightBeHappening === "string" &&
+    typeof r.whyItMatters === "string" &&
+    Array.isArray(r.whatYouCanDo) &&
+    Array.isArray(r.evidenceToKeep) &&
+    Array.isArray(r.helpTags)
+  );
+}
+
+
+
+
 export function askAssistant(message: string): AssistantResponse {
   const normalized = message.toLowerCase();
   for (const scenario of scenarios) {
@@ -273,5 +314,50 @@ export function askAssistant(message: string): AssistantResponse {
   return fallback;
 }
 
-export const DEMO_DISCLAIMER =
-  "Trợ lý AI trong bản demo này dùng câu trả lời dựng sẵn theo tình huống phổ biến (chưa kết nối mô hình AI thật) và chỉ mang tính tham khảo, không phải tư vấn pháp lý.";
+
+export async function askAssistantSmart(
+  message: string,
+  history: ChatTurn[] = []
+): Promise<AssistantResponse> {
+  if (!process.env.GEMINI_API_KEY) {
+    return askAssistant(message);
+  }
+
+  const historyContents = history.slice(-6).map((turn) => ({
+    role: turn.role === "user" ? "user" : "model",
+    parts: [{ text: turn.role === "user" ? turn.content : summarizeForHistory(turn.content) }],
+  }));
+  const contents = [...historyContents, { role: "user", parts: [{ text: message }] }];
+
+  for (const model of AI_MODELS) {
+    try {
+      const result = await ai.models.generateContent({
+        model,
+        contents,
+        config: { systemInstruction, responseMimeType: "application/json", responseSchema },
+      });
+
+      const parsed = JSON.parse(result.text!);
+      if (!isValidResponse(parsed)) throw new Error(`Model "${model}" trả JSON thiếu field`);
+
+      return parsed;
+    } catch (err) {
+      console.error(`Model "${model}" lỗi, thử model kế tiếp:`, err);
+      // không return ở đây -> vòng lặp tự chuyển sang model tiếp theo trong AI_MODELS
+    }
+  }
+
+  console.error("Tất cả model trong AI_MODELS đều lỗi, dùng rule-based fallback.");
+  return askAssistant(message);
+}
+
+/** Tóm tắt câu trả lời cũ (JSON) thành 1 câu ngắn để nhét vào history, tránh prompt phình to. */
+function summarizeForHistory(assistantJson: string): string {
+  try {
+    const r = JSON.parse(assistantJson) as AssistantResponse;
+    return `[Đã tư vấn về: ${r.topic}]`;
+  } catch {
+    return "[phản hồi trước]";
+  }
+}
+

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb, newId, nowIso } from "@/lib/db";
 import { requireApiSession } from "@/lib/auth";
-import { askAssistant } from "@/lib/aiAssistant";
+import { askAssistantSmart } from "@/lib/aiAssistant";
+import { ChatTurn } from "@/lib/assistantShared";
 
 export const runtime = "nodejs";
 
@@ -33,13 +34,22 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb();
+
+  // Lấy lịch sử TRƯỚC khi lưu tin nhắn mới, tránh lặp lại chính câu hỏi hiện tại vào history.
+  const historyRows = db
+    .prepare(
+      "SELECT role, content FROM ai_messages WHERE user_id = ? ORDER BY created_at DESC LIMIT 6"
+    )
+    .all(session.userId) as unknown as ChatTurn[];
+  const history = historyRows.reverse(); // đảo lại thành thứ tự thời gian tăng dần
+
   const userMsgId = newId();
   const now1 = nowIso();
   db.prepare(
     "INSERT INTO ai_messages (id, user_id, role, content, topic_tag, created_at) VALUES (?, ?, 'user', ?, NULL, ?)"
   ).run(userMsgId, session.userId, parsed.data.message, now1);
 
-  const response = askAssistant(parsed.data.message);
+  const response = await askAssistantSmart(parsed.data.message, history);
 
   const assistantMsgId = newId();
   const now2 = nowIso();
