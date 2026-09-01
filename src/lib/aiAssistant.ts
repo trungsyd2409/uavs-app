@@ -15,7 +15,7 @@ interface Scenario {
   response: AssistantResponse;
 }
 
-const scenarios: Scenario[] = [
+export const scenarios: Scenario[] = [
   {
     id: "no_payslip",
     keywords: ["payslip", "phiếu lương", "phieu luong", "không có lương", "chứng từ lương"],
