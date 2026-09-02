@@ -2,6 +2,7 @@ import { ProblemTag } from "@/data/supportOrgs";
 import { GoogleGenAI, Type } from "@google/genai";
 import { AssistantResponse, ChatTurn } from "./assistantShared";
 import { AI_MODELS } from "./aiConfig";
+import { retrieveContext } from "./rag";
 
 interface Scenario {
   id: string;
@@ -281,11 +282,17 @@ const knowledgeBase = scenarios
   .map((s) => `- ${s.response.topic}: ${s.response.whyItMatters}`)
   .join("\n");
 
-const systemInstruction = `Bạn là trợ lý AI về quyền lợi lao động cho người lao động Việt Nam tại Úc, trong app "Bạn Đồng Hành".
+function buildSystemInstruction(ragChunks: string[]): string {
+  const ragSection = ragChunks.length > 0
+    ? `\n\nThông tin luật tham khảo thêm (trích Fair Work Ombudsman, ưu tiên dùng nếu liên quan trực tiếp đến câu hỏi):\n${ragChunks.join("\n\n---\n\n")}`
+    : "";
+
+  return `Bạn là trợ lý AI về quyền lợi lao động cho người lao động Việt Nam tại Úc, trong app "Bạn Đồng Hành".
 Chỉ trả lời bằng tiếng Việt. Đây KHÔNG phải tư vấn pháp lý chính thức — luôn nhắc người dùng kiểm tra lại với Fair Work Ombudsman khi cần.
 Dựa trên các kiến thức đã được kiểm chứng sau (không tự bịa số liệu luật khác):
-${knowledgeBase}
+${knowledgeBase}${ragSection}
 Trả lời đúng theo JSON schema được cung cấp.`;
+}
 
 /** Kiểm tra JSON Gemini trả về có đủ field cần thiết không, tránh crash nếu model trả thiếu. */
 function isValidResponse(x: unknown): x is AssistantResponse {
@@ -323,6 +330,10 @@ export async function askAssistantSmart(
     return askAssistant(message);
   }
 
+  // MỚI: lấy context RAG liên quan đến câu hỏi trước khi gọi model
+  const ragChunks = await retrieveContext(message);
+  const systemInstruction = buildSystemInstruction(ragChunks);
+
   const historyContents = history.slice(-6).map((turn) => ({
     role: turn.role === "user" ? "user" : "model",
     parts: [{ text: turn.role === "user" ? turn.content : summarizeForHistory(turn.content) }],
@@ -343,7 +354,6 @@ export async function askAssistantSmart(
       return parsed;
     } catch (err) {
       console.error(`Model "${model}" lỗi, thử model kế tiếp:`, err);
-      // không return ở đây -> vòng lặp tự chuyển sang model tiếp theo trong AI_MODELS
     }
   }
 
