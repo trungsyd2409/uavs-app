@@ -50,3 +50,6 @@ rag-pipeline/data/*
 rag-pipeline/reports/
 __pycache__/
 .pytest_cache/
+
+# báo cáo của công cụ dòng lệnh thử trợ lý
+cli/reports/

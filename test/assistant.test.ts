@@ -13,7 +13,7 @@ import { askAssistant } from "../src/lib/assistant";
 import { fallbackAnswer, validateAnswer } from "../src/lib/assistant/answer";
 import { isValidAbn, parseAbnResponse } from "../src/lib/assistant/abn";
 import { GeminiAuthError, generateJson } from "../src/lib/assistant/gemini";
-import { analyze, foldVietnamese, keywordIntent, scanEmergency, validateNlu } from "../src/lib/assistant/nlu";
+import { analyze, fallbackNlu, foldVietnamese, keywordIntent, scanEmergency, validateNlu } from "../src/lib/assistant/nlu";
 import { sanitizeProfile } from "../src/lib/assistant/profile";
 import { applyScores } from "../src/lib/assistant/rerank";
 import { resetRagIndex } from "../src/lib/assistant/retrieval";
@@ -60,6 +60,17 @@ describe("NLU", () => {
     expect(keywordIntent("chủ trả lương thấp")).toBe("underpayment");
     expect(keywordIntent("bi duoi viec")).toBe("unfair_dismissal");
     expect(keywordIntent("xin chào")).toBe("general");
+  });
+
+  it("từ khoá cụ thể (ABN) thắng từ chung chung (lương) — lỗi bắt được bằng cli/cases.jsonl", () => {
+    expect(keywordIntent("Chủ bắt em làm ABN thay vì trả lương bình thường")).toBe("contract_hours");
+    expect(keywordIntent("chủ trả lương thấp")).toBe("underpayment");
+  });
+
+  it("chế độ dự phòng dịch thuật ngữ sang tiếng Anh để tìm được tài liệu", () => {
+    const r = fallbackNlu("Em làm thử 2 ngày ở quán mà không được trả tiền", []);
+    expect(r.englishQuery).toMatch(/^unpaid trial shift/);
+    expect(fallbackNlu("chu giu ho chieu", []).englishQuery).toMatch(/passport/);
   });
 
   it("kiểm tra JSON: bỏ intent lạ, chuẩn hoá ABN, bỏ số âm", () => {

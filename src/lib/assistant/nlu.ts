@@ -77,13 +77,17 @@ const INTENT_QUERY: Record<Intent, string> = {
   general: "workplace rights help",
 };
 
+// Từ quá chung chung (xuất hiện trong nhiều loại câu hỏi) chỉ tính nửa điểm,
+// để "bắt làm ABN thay vì trả lương" nghiêng về contract_hours chứ không phải underpayment.
+const GENERIC_KEYWORDS = new Set(["luong", "tien cong", "gio lam"]);
+
 export function keywordIntent(message: string): Intent {
   const folded = foldVietnamese(message);
   let best: Intent = "general";
   let bestScore = 0;
-  // Thứ tự khai báo quan trọng: "phiếu lương" phải thắng "lương"
+  // Hoà điểm thì intent khai báo trước thắng: "phiếu lương" phải thắng "lương"
   for (const [intent, words] of Object.entries(INTENT_KEYWORDS)) {
-    const score = containsAny(folded, words).length;
+    const score = containsAny(folded, words).reduce((s, w) => s + (GENERIC_KEYWORDS.has(w) ? 0.5 : 1), 0);
     if (score > bestScore) {
       best = intent as Intent;
       bestScore = score;
@@ -92,15 +96,38 @@ export function keywordIntent(message: string): Intent {
   return best;
 }
 
+// Bảng dịch thuật ngữ cho chế độ dự phòng (không có Gemini để dịch VI→EN).
+// Tài liệu trong rag.db là tiếng Anh: thiếu các từ này thì tìm từ khoá (BM25) không khớp được.
+// Viết KHÔNG DẤU ở cột trái.
+const GLOSSARY: [string, string][] = [
+  ["lam thu", "unpaid trial shift"], ["thu viec", "unpaid trial"],
+  ["tru luong", "deductions from pay"], ["tru tien", "deductions"],
+  ["tien mat", "cash payment"], ["payslip", "pay slip"], ["phieu luong", "pay slip"],
+  ["chu nhat", "Sunday penalty rates"], ["ngay le", "public holiday penalty rates"], ["tang ca", "overtime"],
+  ["casual", "casual loading"], ["abn", "ABN sham contracting contractor"],
+  ["ho chieu", "passport held"], ["huy visa", "visa cancelled"], ["sinh vien", "student visa work hours"],
+  ["du hoc", "student visa"], ["duoi viec", "dismissal"], ["sa thai", "unfair dismissal"],
+  ["bi thuong", "injured at work workers compensation"], ["do bao ho", "protective equipment"],
+  ["gang tay", "gloves protective equipment"], ["hoa chat", "chemicals"],
+  ["quay roi", "sexual harassment"], ["tuc tiu", "sexual comments harassment"], ["phan biet", "discrimination"],
+];
+
+export function glossaryTerms(message: string): string[] {
+  const folded = foldVietnamese(message);
+  return GLOSSARY.filter(([vi]) => containsAny(folded, [vi]).length).map(([, en]) => en);
+}
+
 export function fallbackNlu(message: string, emergency: string[]): NluResult {
   const intent = keywordIntent(message);
   const risk: RiskLevel = emergency.length ? "high" : "low";
+  const terms = glossaryTerms(message);
   return {
     intent,
     entities: {},
     risk,
     needsReferral: risk === "high",
-    englishQuery: `${INTENT_QUERY[intent]} ${message}`.slice(0, 400),
+    // Thuật ngữ dịch được đứng trước: chúng là tín hiệu tìm kiếm mạnh nhất
+    englishQuery: [...terms, INTENT_QUERY[intent], message].join(" ").slice(0, 400),
     emergencyKeywords: emergency,
     source: "fallback",
   };
