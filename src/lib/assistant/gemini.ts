@@ -60,7 +60,8 @@ export function fakeEmbed(text: string): Float32Array {
   for (const word of text.toLowerCase().match(WORD) ?? []) {
     const h = BigInt("0x" + createHash("md5").update(word, "utf8").digest("hex"));
     const index = Number(h % BigInt(EMBED_DIM));
-    vec[index] += (h >> 20n) % 2n === 1n ? 1 : -1;
+    // Dùng BigInt(...) thay cho 20n/2n: tsconfig của app đặt target ES2017, không cho viết BigInt literal
+    vec[index] += (h >> BigInt(20)) % BigInt(2) === BigInt(1) ? 1 : -1;
   }
   if (vec.every((v) => v === 0)) vec[0] = 1;
   return l2Normalize(vec);

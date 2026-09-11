@@ -2,7 +2,7 @@
 
 /**
  * Trang thử trợ lý AI: /assistant-demo
- * Gọi POST /api/assistant?debug=1 và hiển thị câu trả lời 5 phần, nguồn, nhật ký từng bước.
+ * Gọi POST /api/assistant/debug và hiển thị câu trả lời 5 phần, nguồn, nhật ký từng bước.
  * Có thể dùng làm mẫu để nối vào trang AI Assistant sẵn có của app.
  */
 import { useState } from "react";
@@ -44,7 +44,7 @@ export default function AssistantDemo() {
     setError("");
     setResult(null);
     try {
-      const res = await fetch("/api/assistant?debug=1", {
+      const res = await fetch("/api/assistant/debug", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, profile: profile as UserProfile }),

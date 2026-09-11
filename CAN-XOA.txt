@@ -1,0 +1,9 @@
+Sau khi copy đè các file trong gói này vào thư mục Bridge, XOÁ thêm 3 thứ:
+
+  next.config.example.ts          (không cần nữa, nội dung đã nằm trong next.config.ts)
+  src\types\node-sqlite.d.ts      (thừa khi đã dùng @types/node 22)
+  src\types\                      (thư mục rỗng sau khi xoá file trên)
+
+Và bỏ 2 file database khỏi git (file trên máy VẪN GIỮ, chỉ không đẩy lên GitHub nữa):
+
+  git rm --cached data/app.db-shm data/app.db-wal

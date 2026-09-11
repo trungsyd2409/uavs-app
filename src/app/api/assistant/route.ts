@@ -3,10 +3,13 @@ import { z } from "zod";
 import { getDb, newId, nowIso } from "@/lib/db";
 import { requireApiSession } from "@/lib/auth";
 import { askAssistantSmart } from "@/lib/aiAssistant";
+import { askAssistant } from "@/lib/assistant";
+import { profileFromOnboarding, toLegacyResponse } from "@/lib/assistant/legacy";
 import { ChatTurn } from "@/lib/assistantShared";
 import { checkRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // pipeline RAG: NLU + embed + rerank + sinh câu trả lời
 
 const schema = z.object({ message: z.string().trim().min(1).max(2000) });
 
@@ -58,7 +61,19 @@ export async function POST(req: NextRequest) {
     "INSERT INTO ai_messages (id, user_id, role, content, topic_tag, created_at) VALUES (?, ?, 'user', ?, NULL, ?)"
   ).run(userMsgId, session.userId, parsed.data.message, now1);
 
-  const response = await askAssistantSmart(parsed.data.message, history);
+  // Pipeline RAG mới (lọc tài liệu theo hồ sơ onboarding). Nếu lỗi (vd thiếu data/rag.db)
+  // thì lùi về trợ lý cũ, người dùng vẫn nhận được câu trả lời.
+  const profileRow = db
+    .prepare("SELECT visa, industry, employment FROM profiles WHERE user_id = ?")
+    .get(session.userId);
+  let response;
+  try {
+    const result = await askAssistant(parsed.data.message, profileFromOnboarding(profileRow));
+    response = toLegacyResponse(result.response);
+  } catch (e) {
+    console.error("[assistant] pipeline RAG lỗi, dùng trợ lý cũ:", e);
+    response = { ...(await askAssistantSmart(parsed.data.message, history)), engine: "legacy" as const };
+  }
 
   const assistantMsgId = newId();
   const now2 = nowIso();

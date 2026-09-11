@@ -40,3 +40,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 data/*.db*
+# rag.db do rag-pipeline tạo: PHẢI commit để Vercel có dữ liệu RAG
+!data/rag.db
+
+# Python pipeline
+rag-pipeline/.venv/
+rag-pipeline/data/*
+!rag-pipeline/data/manual/
+rag-pipeline/reports/
+__pycache__/
+.pytest_cache/

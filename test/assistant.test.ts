@@ -19,7 +19,8 @@ import { applyScores } from "../src/lib/assistant/rerank";
 import { resetRagIndex } from "../src/lib/assistant/retrieval";
 import type { NluResult, SearchHit } from "../src/lib/assistant/types";
 import { compareWage, currentRate, wageEvidence } from "../src/lib/assistant/wages";
-import { POST } from "../src/app/api/assistant/route";
+import { POST } from "../src/app/api/assistant/debug/route";
+import { profileFromOnboarding, toLegacyResponse } from "../src/lib/assistant/legacy";
 
 const mockGenerate = vi.mocked(generateJson);
 
@@ -215,22 +216,25 @@ describe("askAssistant khi API key sai", () => {
 
 // ---------------- API route ----------------
 
-describe("POST /api/assistant", () => {
+describe("POST /api/assistant/debug", () => {
   beforeEach(() => { process.env.RAG_FAKE_GEMINI = "1"; });
-  const post = (body: unknown, query = "") =>
-    POST(new Request(`http://localhost/api/assistant${query}`, { method: "POST", body: JSON.stringify(body) }));
+  const post = (body: unknown) =>
+    POST(new Request("http://localhost/api/assistant/debug", { method: "POST", body: JSON.stringify(body) }));
 
-  it("trả lời 200, có trace khi debug=1", async () => {
-    const res = await post({ message: "làm thử không lương ở nhà hàng", profile: { industry: "hospitality" } }, "?debug=1");
+  it("trả lời 200, có trace", async () => {
+    const res = await post({ message: "làm thử không lương ở nhà hàng", profile: { industry: "hospitality" } });
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.answer.whatToDo.length).toBeGreaterThan(0);
     expect(Array.isArray(data.trace)).toBe(true);
   });
 
-  it("không có trace khi không debug", async () => {
-    const data = await (await post({ message: "payslip" })).json();
-    expect(data.trace).toBeUndefined();
+  it("bị tắt trên production khi chưa bật ASSISTANT_DEMO", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect((await post({ message: "payslip" })).status).toBe(404);
+    vi.stubEnv("ASSISTANT_DEMO", "1");
+    expect((await post({ message: "payslip" })).status).toBe(200);
+    vi.unstubAllEnvs();
   });
 
   it("400 khi câu hỏi rỗng hoặc quá dài", async () => {
@@ -241,5 +245,42 @@ describe("POST /api/assistant", () => {
   it("lọc hồ sơ: bỏ giá trị lạ", () => {
     expect(sanitizeProfile({ visa: "student", industry: "hacker", state: "NSW", extra: 1 }))
       .toEqual({ visa: "student", industry: undefined, employment: undefined, state: "NSW" });
+  });
+});
+
+
+// ---------------- Nối với app cũ ----------------
+
+describe("adapter cho app cũ", () => {
+  it("đổi đúng các nhãn onboarding THẬT của app sang mã", () => {
+    expect(profileFromOnboarding({
+      visa: "Du học sinh (Student)", industry: "Nhà hàng / Quán cà phê", employment: "Casual (thời vụ)",
+    })).toEqual({ visa: "student", industry: "hospitality", employment: "casual" });
+    expect(profileFromOnboarding({
+      visa: "Working Holiday", industry: "Nail / Làm đẹp", employment: "Contractor / ABN",
+    })).toEqual({ visa: "whv", industry: "beauty", employment: "contractor" });
+    expect(profileFromOnboarding({
+      visa: "Tạm trú diện lao động (Temporary Work)", industry: "Dọn dẹp (Cleaning)", employment: "Part-time (bán thời gian)",
+    })).toEqual({ visa: "temp_work", industry: "cleaning", employment: "part_time" });
+    expect(profileFromOnboarding({
+      visa: "Thường trú nhân (Permanent Resident)", industry: "Nông trại (Farm)", employment: "Full-time (toàn thời gian)",
+    })).toEqual({ visa: "pr", industry: "farm", employment: "full_time" });
+  });
+
+  it("nhãn 'không chắc chắn' / 'khác' / thiếu hồ sơ -> không lọc", () => {
+    expect(profileFromOnboarding({ visa: "Không chắc chắn", industry: "Khác", employment: "Không chắc chắn" }))
+      .toEqual({ visa: undefined, industry: undefined, employment: undefined });
+    expect(profileFromOnboarding(undefined)).toEqual({});
+  });
+
+  it("câu trả lời mới đổi sang định dạng trang /assistant cũ", async () => {
+    process.env.RAG_FAKE_GEMINI = "1";
+    const { response } = await askAssistant("Chủ giữ hộ chiếu của em");
+    const legacy = toLegacyResponse(response);
+    expect(legacy.topic).toBe("Vấn đề liên quan đến visa");
+    expect(legacy.whatYouCanDo).toEqual(response.answer.whatToDo);
+    expect(legacy.helpTags).toEqual(["visa_threat"]);
+    expect(legacy.urgent?.contacts.some((c) => c.phone === "000")).toBe(true);
+    expect(legacy.engine).toBe("rag-fallback");
   });
 });

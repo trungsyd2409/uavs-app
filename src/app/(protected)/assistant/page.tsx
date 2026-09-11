@@ -168,12 +168,55 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   return (
     <Card className="max-w-[95%]">
+      {parsed.urgent && (
+        <div className="mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm">
+          <p className="font-semibold text-red-800">{parsed.urgent.message}</p>
+          <ul className="mt-2 space-y-1">
+            {parsed.urgent.contacts.map((c) => (
+              <li key={c.name}>
+                <a
+                  className="font-medium text-red-900 underline"
+                  href={c.phone ? `tel:${c.phone.replace(/\s/g, "")}` : c.url}
+                >
+                  {c.name}
+                  {c.phone ? ` — ${c.phone}` : ""}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="font-semibold text-sm text-[var(--color-primary-dark)]">{parsed.topic}</p>
       <div className="mt-2 space-y-2.5 text-sm">
         <Block label="Có thể đang xảy ra gì" text={parsed.whatMightBeHappening} />
         <Block label="Vì sao điều này quan trọng" text={parsed.whyItMatters} />
         <ListBlock label="Bạn có thể làm gì" items={parsed.whatYouCanDo} />
         <ListBlock label="Bằng chứng nên giữ lại" items={parsed.evidenceToKeep} />
+        {parsed.whoCanHelp && parsed.whoCanHelp.length > 0 && (
+          <ListBlock label="Ai có thể giúp" items={parsed.whoCanHelp} />
+        )}
+        {parsed.sources && parsed.sources.some((s) => s.cited) && (
+          <div>
+            <p className="text-xs font-semibold text-[var(--color-muted)]">Nguồn</p>
+            <ul className="mt-0.5 space-y-1 text-xs">
+              {parsed.sources
+                .filter((s) => s.cited)
+                .map((s) => (
+                  <li key={s.n}>
+                    [{s.n}]{" "}
+                    {s.url ? (
+                      <a href={s.url} target="_blank" rel="noreferrer" className="underline">
+                        {s.source}
+                      </a>
+                    ) : (
+                      s.source
+                    )}
+                    <span className="text-[var(--color-muted)]"> · {s.title}</span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
       </div>
       <Link href="/support" className="block mt-3">
         <Button variant="secondary" className="!py-2 !text-xs">

@@ -7,6 +7,12 @@ export interface AssistantResponse {
     whatYouCanDo: string[];
     evidenceToKeep: string[];
     helpTags: ProblemTag[];
+    // ---- Trường mới từ pipeline RAG (tuỳ chọn: tin nhắn cũ trong lịch sử không có) ----
+    whoCanHelp?: string[];
+    sources?: { n: number; title: string; source: string; url?: string; kind: string; cited: boolean }[];
+    urgent?: { message: string; contacts: { name: string; phone?: string; url?: string; note: string }[] };
+    grounding?: "grounded" | "partial" | "insufficient";
+    engine?: "rag-gemini" | "rag-fallback" | "legacy";
 }
 
 export interface ChatTurn {

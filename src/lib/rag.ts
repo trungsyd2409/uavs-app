@@ -43,7 +43,7 @@ async function embedQuery(text: string): Promise<number[]> {
     });
     // Lưu ý: nếu dòng dưới báo lỗi undefined, console.log(result) ra để xem đúng cấu trúc trả về,
     // vì SDK có thể trả object hơi khác tuỳ phiên bản.
-    return result.embeddings[0].values;
+    return result.embeddings?.[0]?.values ?? [];
 }
 
 export async function retrieveContext(question: string, topK = 3): Promise<string[]> {
