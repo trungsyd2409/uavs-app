@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Vercel chỉ đóng gói file mà code import; rag.db được mở bằng đường dẫn nên phải khai báo
   outputFileTracingIncludes: {
     "/api/assistant": ["./data/rag.db"],
   },
