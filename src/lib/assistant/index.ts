@@ -36,7 +36,7 @@ export async function askAssistant(
   try {
     const result = await analyze(message);
     nlu = result.nlu;
-    trace.push({ step: "NLU", ms: ms(t0), ok: !result.error, detail: { ...nlu, error: result.error } });
+    trace.push({ step: "NLU", ms: ms(t0), ok: !result.error, detail: { model: result.model, error: result.error, ...nlu } });
   } catch (e) {
     if (!(e instanceof GeminiAuthError)) throw e;
     offline = true;

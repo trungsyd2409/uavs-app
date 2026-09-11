@@ -10,6 +10,7 @@
  *   npm run ask                                                  chế độ hỏi liên tục
  *   npm run ask -- --file cli/cases.jsonl                        chạy bộ câu hỏi + kiểm tra tự động
  *   npm run ask -- --fake ...                                    không gọi Gemini (dùng rag.db vector giả)
+ *   npm run ask -- --models                                      model nào key của bạn dùng được thật
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -32,6 +33,7 @@ const { values: opt, positionals } = parseArgs({
     fake: { type: "boolean", default: false },
     db: { type: "string" },
     "no-color": { type: "boolean", default: false },
+    models: { type: "boolean", default: false },
     help: { type: "boolean", short: "h", default: false },
   },
 });
@@ -43,7 +45,7 @@ if (opt.db) process.env.RAG_DB_PATH = path.resolve(opt.db);
 const { askAssistant } = await import("../src/lib/assistant/index");
 const { sanitizeProfile } = await import("../src/lib/assistant/profile");
 const { profileFromOnboarding, toLegacyResponse } = await import("../src/lib/assistant/legacy");
-const { RAG_DB_PATH, isFakeMode } = await import("../src/lib/assistant/config");
+const { RAG_DB_PATH, isFakeMode, NLU_MODELS, ANSWER_MODELS, EMBED_MODEL, EMBED_DIM } = await import("../src/lib/assistant/config");
 type UserProfile = import("../src/lib/assistant/types").UserProfile;
 type AssistantResponse = import("../src/lib/assistant/types").AssistantResponse;
 type TraceStep = import("../src/lib/assistant/types").TraceStep;
@@ -249,12 +251,94 @@ async function interactive(profile: UserProfile) {
   rl.close();
 }
 
+// ---------- 6b. Kiểm tra model: gọi thử từng model với key hiện tại ----------
+
+async function checkModels() {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    console.log(c.red("Thiếu GEMINI_API_KEY trong .env.local (chạy lệnh này ở thư mục gốc của app)"));
+    return false;
+  }
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey });
+
+  // 1. Danh sách Google công bố cho key này
+  const listed: string[] = [];
+  try {
+    const pager = await ai.models.list({ config: { pageSize: 100 } });
+    for await (const m of pager) {
+      const name = (m.name ?? "").replace(/^models\//, "");
+      const canGenerate = m.supportedActions?.includes("generateContent");
+      // Chỉ lấy model văn bản dòng flash (rẻ, nhanh); bỏ ảnh, giọng nói, live...
+      if (canGenerate && /flash/.test(name) && !/image|tts|audio|live|native|computer|robotics|thinking-exp/.test(name)) {
+        listed.push(name);
+      }
+    }
+  } catch (e) {
+    console.log(c.red(`Không lấy được danh sách model: ${(e as Error).message.slice(0, 200)}`));
+  }
+
+  // 2. Gọi thử: danh sách có thể vẫn chứa model đã khoá với project mới
+  const candidates = [...new Set([...NLU_MODELS, ...ANSWER_MODELS, ...listed])].slice(0, 14);
+  console.log(c.bold(`Gọi thử ${candidates.length} model sinh văn bản (mỗi model một câu rất ngắn):\n`));
+  const usable: string[] = [];
+  for (const model of candidates) {
+    const t0 = performance.now();
+    try {
+      await ai.models.generateContent({
+        model,
+        contents: "Reply with OK",
+        config: { abortSignal: AbortSignal.timeout(20_000) },
+      });
+      usable.push(model);
+      console.log(`  ${c.green("✓")} ${model.padEnd(36)} ${c.dim(`${Math.round(performance.now() - t0)} ms`)}`);
+    } catch (e) {
+      const msg = String((e as Error).message).replace(/\s+/g, " ");
+      const reason = /no longer available/i.test(msg) ? "đã khoá với project mới"
+        : /NOT_FOUND|404/.test(msg) ? "không tồn tại"
+        : /429|quota|RESOURCE_EXHAUSTED/i.test(msg) ? "hết hạn mức (quota)"
+        : /API_KEY_INVALID|API key not valid/.test(msg) ? "API key sai"
+        : msg.slice(0, 80);
+      console.log(`  ${c.red("✗")} ${model.padEnd(36)} ${c.dim(reason)}`);
+    }
+  }
+
+  // 3. Embedding (phải là model đã dùng để tạo rag.db)
+  try {
+    const r = await ai.models.embedContent({
+      model: EMBED_MODEL, contents: ["test"],
+      config: { taskType: "RETRIEVAL_QUERY", outputDimensionality: EMBED_DIM },
+    });
+    const dim = r.embeddings?.[0]?.values?.length;
+    console.log(`\n  ${dim === EMBED_DIM ? c.green("✓") : c.red("✗")} embedding ${EMBED_MODEL}: ${dim} chiều`);
+  } catch (e) {
+    console.log(`\n  ${c.red("✗")} embedding ${EMBED_MODEL}: ${(e as Error).message.slice(0, 120)}`);
+  }
+
+  if (!usable.length) {
+    console.log(c.red("\nKhông model nào dùng được. Kiểm tra key, hạn mức, hoặc tạo key mới ở aistudio.google.com"));
+    return false;
+  }
+  // 4. Gợi ý cấu hình: lite (rẻ, nhanh) cho NLU/rerank; flash thường trước, lite dự phòng cho câu trả lời
+  const lite = usable.filter((m) => /lite/.test(m));
+  const full = usable.filter((m) => !/lite/.test(m));
+  const small = (lite.length ? lite : usable).slice(0, 2).join(",");
+  const answer = [...full.slice(0, 1), ...lite.slice(0, 1)].join(",") || usable[0];
+  console.log(c.bold("\nDán vào .env.local (rồi khởi động lại npm run dev):\n"));
+  console.log(`AI_NLU_MODELS=${small}`);
+  console.log(`AI_RERANK_MODELS=${small}`);
+  console.log(`AI_ANSWER_MODELS=${answer}`);
+  return true;
+}
+
 // ---------- 7. Chạy ----------
 
 if (opt.help) {
   console.log(readFileSync(new URL(import.meta.url), "utf8").split("*/")[0].replace("/**", "").replace(/^ \* ?/gm, ""));
   process.exit(0);
 }
+
+if (opt.models) process.exit((await checkModels()) ? 0 : 1);
 
 const profile = normalizeProfile(opt);
 if (!opt.json) {

@@ -15,7 +15,14 @@ npm run ask                                                      # hỏi liên t
 npm run ask:eval                                                 # chạy cli/cases.jsonl + kiểm tra tự động
 npm run ask -- --fake ...                                        # không gọi Gemini
 npm run ask -- --db test/fixtures/sample-rag.db --fake ...       # dùng rag.db thử
+npm run ask -- --models                                          # model nào key của bạn dùng được
 ```
+
+## Luôn ra "mẫu dự phòng"?
+
+Chạy `npm run ask -- "câu hỏi" --trace` rồi tìm bước có dấu ✗. Nếu lỗi là 404 hoặc
+"no longer available to new users": Google đã khoá model đó với project của bạn. Chạy
+`npm run ask -- --models`, dán 3 dòng `AI_*_MODELS` nó gợi ý vào `.env.local`, khởi động lại `npm run dev`.
 
 Hồ sơ: `--visa`, `--industry`, `--employment`, `--state`. Nhận mã (`student`, `hospitality`,
 `casual`, `NSW`) hoặc nhãn tiếng Việt mà trang onboarding lưu.

@@ -101,10 +101,27 @@ export interface GenerateOptions {
   temperature?: number;
 }
 
+// Model bị Google trả 404 (không tồn tại / "no longer available to new users"):
+// ghi nhớ để các câu hỏi sau bỏ qua, không tốn thêm một lần gọi bị từ chối.
+const unavailableModels = new Set<string>();
+
+export function isModelUnavailable(e: unknown): boolean {
+  const text = String((e as Error)?.message ?? e);
+  const status = e instanceof ApiError ? e.status : undefined;
+  return status === 404 || /NOT_FOUND|no longer available|is not found|not supported/i.test(text);
+}
+
+/** Dùng trong test. */
+export function resetUnavailableModels(): void {
+  unavailableModels.clear();
+}
+
 /** Gọi model sinh văn bản, ép trả JSON đúng schema. Trả về object và tên model đã dùng. */
 export async function generateJson<T>(opts: GenerateOptions): Promise<{ data: T; model: string }> {
   let lastError: Error = new Error("Không có model nào để gọi");
-  for (const model of opts.models) {
+  const candidates = opts.models.filter((m) => !unavailableModels.has(m));
+  // Nếu tất cả đều từng lỗi 404 thì vẫn thử lại (có thể model vừa được mở lại)
+  for (const model of candidates.length ? candidates : opts.models) {
     try {
       const res = await getClient().models.generateContent({
         model,
@@ -121,6 +138,7 @@ export async function generateJson<T>(opts: GenerateOptions): Promise<{ data: T;
       if (!text) throw new Error(`${model} trả về rỗng`);
       return { data: JSON.parse(text) as T, model };
     } catch (e) {
+      if (isModelUnavailable(e)) unavailableModels.add(model);
       lastError = translateError(e, model);
       if (lastError instanceof GeminiAuthError) throw lastError; // sai key: model khác cũng vậy
     }

@@ -5,13 +5,22 @@
 import path from "node:path";
 
 // ---- Model ----
-// Đổi tên model tại đây. Danh sách trả lời có thứ tự: model đầu lỗi thì thử model sau.
-export const NLU_MODEL = process.env.AI_NLU_MODEL ?? "gemini-2.5-flash-lite";
-export const RERANK_MODEL = process.env.AI_RERANK_MODEL ?? "gemini-2.5-flash-lite";
-export const ANSWER_MODELS = (process.env.AI_ANSWER_MODELS ?? "gemini-2.5-flash,gemini-2.5-flash-lite")
-  .split(",")
-  .map((m) => m.trim())
-  .filter(Boolean);
+// Mỗi bước có một DANH SÁCH model, thử lần lượt: model đầu lỗi (vd 404 "no longer available
+// to new users") thì tự chuyển sang model sau. Google khoá model cũ với project mới rất nhanh,
+// nên đặt model mới nhất trước và giữ vài lựa chọn dự phòng.
+//
+// Xem model nào key của bạn dùng được:  npm run ask -- --models
+// Rồi ghi đè trong .env.local, ví dụ:   AI_NLU_MODELS=gemini-3.1-flash-lite
+function modelList(envName: string, fallback: string): string[] {
+  return (process.env[envName] ?? fallback).split(",").map((m) => m.trim()).filter(Boolean);
+}
+
+const LITE_MODELS = "gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-3.5-flash,gemini-3.7-flash,gemini-3.6-flash";
+const FLASH_MODELS = "gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-3.5-flash,gemini-3.7-flash,gemini-3.6-flash";
+
+export const NLU_MODELS = modelList("AI_NLU_MODELS", LITE_MODELS);
+export const RERANK_MODELS = modelList("AI_RERANK_MODELS", LITE_MODELS);
+export const ANSWER_MODELS = modelList("AI_ANSWER_MODELS", `${FLASH_MODELS},${LITE_MODELS}`);
 
 // ---- Embedding: PHẢI khớp với pipeline (config/settings.py) ----
 export const EMBED_MODEL = "gemini-embedding-001";

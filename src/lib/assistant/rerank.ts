@@ -5,7 +5,7 @@
  *
  * Kết quả rỗng là tín hiệu quan trọng: không đủ bằng chứng -> LLM phải nói "không đủ thông tin".
  */
-import { FINAL_CHUNKS, RERANK_MIN_SCORE, RERANK_MODEL, TIMEOUT, isFakeMode } from "./config";
+import { FINAL_CHUNKS, RERANK_MIN_SCORE, RERANK_MODELS, TIMEOUT, isFakeMode } from "./config";
 import { GeminiAuthError, generateJson } from "./gemini";
 import type { SearchHit } from "./types";
 
@@ -55,7 +55,7 @@ export async function rerank(englishQuery: string, candidates: SearchHit[]): Pro
     .join("\n\n");
   try {
     const { data } = await generateJson<{ index: number; score: number }[]>({
-      models: [RERANK_MODEL],
+      models: RERANK_MODELS,
       system: SYSTEM_PROMPT,
       prompt: `Question: ${englishQuery}\n\nPassages:\n${passages}`,
       schema: SCHEMA,

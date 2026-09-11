@@ -7,7 +7,7 @@
  *   4. Kiểm tra JSON trả về; lỗi thì dùng fallback từ khoá
  *   5. Hợp nhất: risk lấy mức CAO HƠN giữa AI và từ khoá
  */
-import { MAX_MESSAGE_CHARS, NLU_MODEL, TIMEOUT, isFakeMode } from "./config";
+import { MAX_MESSAGE_CHARS, NLU_MODELS, TIMEOUT, isFakeMode } from "./config";
 import { GeminiAuthError, generateJson } from "./gemini";
 import { INTENTS, RISK_LEVELS, type Intent, type NluEntities, type NluResult, type RiskLevel } from "./types";
 
@@ -225,7 +225,7 @@ export function maxRisk(a: RiskLevel, b: RiskLevel): RiskLevel {
   return RISK_ORDER[a] >= RISK_ORDER[b] ? a : b;
 }
 
-export async function analyze(rawMessage: string): Promise<{ nlu: NluResult; error?: string }> {
+export async function analyze(rawMessage: string): Promise<{ nlu: NluResult; error?: string; model?: string }> {
   const message = cleanMessage(rawMessage); // bước 1
   const emergency = scanEmergency(message); // bước 2
 
@@ -233,22 +233,24 @@ export async function analyze(rawMessage: string): Promise<{ nlu: NluResult; err
 
   let validated: ReturnType<typeof validateNlu> = null;
   let error: string | undefined;
+  let model: string | undefined;
   try {
-    const { data } = await generateJson<unknown>({ // bước 3
-      models: [NLU_MODEL],
+    const result = await generateJson<unknown>({ // bước 3
+      models: NLU_MODELS,
       system: SYSTEM_PROMPT,
       prompt: message,
       schema: SCHEMA,
       timeoutMs: TIMEOUT.nlu,
     });
-    validated = validateNlu(data); // bước 4
+    model = result.model;
+    validated = validateNlu(result.data); // bước 4
     if (!validated) error = "JSON của Gemini không hợp lệ";
   } catch (e) {
     if (e instanceof GeminiAuthError) throw e; // sai key: báo lên trên, không giấu lỗi
     error = (e as Error).message;
   }
 
-  if (!validated) return { nlu: fallbackNlu(message, emergency), error };
+  if (!validated) return { nlu: fallbackNlu(message, emergency), error, model };
 
   const risk = emergency.length ? maxRisk(validated.risk, "high") : validated.risk; // bước 5
   return {
@@ -259,5 +261,6 @@ export async function analyze(rawMessage: string): Promise<{ nlu: NluResult; err
       emergencyKeywords: emergency,
       source: "gemini",
     },
+    model,
   };
 }
